@@ -1,0 +1,33 @@
+[package]
+name = "aether_monitor"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+sysinfo = "0.30"
+triple_buffer = "5.0"
+parking_lot = "0.12"
+egui = "0.27"
+egui-wgpu = "0.27"
+wgpu = "0.19"
+bytemuck = { version = "1.15", features = ["derive"] }
+pollster = "0.3"
+
+[dependencies.objc2]
+version = "0.5.2"
+
+[dependencies.objc2-foundation]
+version = "0.2.2"
+features = ["NSObject", "NSString", "NSGeometry", "NSThread", "NSNotification", "NSProcessInfo", "NSValue"]
+
+[dependencies.objc2-app-kit]
+version = "0.2.2"
+features = [
+    "NSApplication", "NSBezierPath", "NSColor", "NSEvent", "NSGraphicsContext",
+    "NSPopover", "NSResponder", "NSRunningApplication", "NSStatusBar", "NSStatusItem", "NSStatusBarButton",
+    "NSView", "NSViewController", "NSWindow"
+]
+
+[dependencies.objc2-quartz-core]
+version = "0.2.2"
+features = ["CALayer", "CAMetalLayer"]
