@@ -3,7 +3,7 @@
 
 use std::ffi::c_void;
 
-use egui::{Context, RawInput};
+use egui::{Color32, Context, Frame, Margin, RawInput, Rounding, Stroke, Vec2};
 use egui_wgpu::wgpu::{
     CommandEncoderDescriptor, Device, LoadOp, Operations, Queue, RenderPassColorAttachment,
     RenderPassDescriptor, StoreOp, Surface, SurfaceConfiguration, TextureViewDescriptor,
@@ -205,22 +205,110 @@ impl<'a> GpuEngine<'a> {
 }
 
 fn draw_monitor_panel(ctx: &Context, frame: &TelemetryFrame) {
-    egui::CentralPanel::default().show(ctx, |ui| {
-        ui.heading("Aether Monitor");
-        ui.separator();
-        ui.label(format!("CPU {:>5.1}%", frame.cpu_total));
-        ui.add(egui::ProgressBar::new(frame.cpu_total / 100.0).show_percentage());
-        ui.label(format!(
-            "Memory {} MB / {} MB",
-            frame.mem_used_mb, frame.mem_total_mb
-        ));
-        ui.add(egui::ProgressBar::new(memory_ratio(frame)).show_percentage());
-        ui.label(format!(
-            "Network in {} B/s  out {} B/s",
-            frame.net_in_bytes_sec, frame.net_out_bytes_sec
-        ));
-        ui.label(format!("Temperature {:>4.1} C", frame.temp_celsius));
-    });
+    let mut style = (*ctx.style()).clone();
+    style.visuals.override_text_color = Some(Color32::from_rgb(224, 231, 238));
+    style.visuals.widgets.noninteractive.bg_fill = Color32::from_rgb(18, 21, 25);
+    style.spacing.item_spacing = Vec2::new(6.0, 6.0);
+    ctx.set_style(style);
+
+    egui::CentralPanel::default()
+        .frame(Frame::none().fill(Color32::from_rgb(10, 12, 15)))
+        .show(ctx, |ui| {
+            ui.set_width(ui.available_width());
+            ui.add_space(8.0);
+            Frame::none()
+                .inner_margin(Margin::symmetric(10.0, 0.0))
+                .show(ui, |ui| {
+                    ui.label(
+                        egui::RichText::new("AETHER")
+                            .size(9.0)
+                            .color(Color32::from_rgb(122, 146, 164)),
+                    );
+                    ui.add_space(2.0);
+                    ui.label(
+                        egui::RichText::new("System Monitor")
+                            .size(22.0)
+                            .color(Color32::from_rgb(241, 246, 249)),
+                    );
+                });
+            ui.add_space(8.0);
+
+            metric_row(
+                ui,
+                "CPU",
+                format!("{:>4.1}%", frame.cpu_total),
+                frame.cpu_total / 100.0,
+                Color32::from_rgb(92, 222, 255),
+            );
+            metric_row(
+                ui,
+                "Memory",
+                format!(
+                    "{} / {} GB",
+                    mb_to_gb(frame.mem_used_mb),
+                    mb_to_gb(frame.mem_total_mb)
+                ),
+                memory_ratio(frame),
+                Color32::from_rgb(112, 158, 255),
+            );
+            metric_row(
+                ui,
+                "Network",
+                format!(
+                    "{} in  {} out",
+                    compact_bytes(frame.net_in_bytes_sec),
+                    compact_bytes(frame.net_out_bytes_sec),
+                ),
+                latest_network_ratio(frame),
+                Color32::from_rgb(36, 232, 160),
+            );
+            metric_row(
+                ui,
+                "Thermal",
+                format!("{:>4.1} C", frame.temp_celsius),
+                frame.temp_celsius / 100.0,
+                thermal_color(frame.temp_celsius),
+            );
+        });
+}
+
+fn metric_row(ui: &mut egui::Ui, label: &str, value: String, ratio: f32, accent: Color32) {
+    Frame::none()
+        .fill(Color32::from_rgb(15, 18, 22))
+        .stroke(Stroke::new(1.0, Color32::from_rgb(37, 43, 50)))
+        .rounding(Rounding::same(4.0))
+        .inner_margin(Margin::symmetric(10.0, 8.0))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.horizontal(|ui| {
+                ui.set_height(18.0);
+                ui.add_sized(
+                    Vec2::new(48.0, 18.0),
+                    egui::Label::new(
+                        egui::RichText::new(label)
+                            .size(10.0)
+                            .color(Color32::from_rgb(130, 148, 160)),
+                    )
+                    .wrap(false),
+                );
+                ui.add_sized(
+                    Vec2::new(168.0, 18.0),
+                    egui::Label::new(
+                        egui::RichText::new(value)
+                            .size(15.0)
+                            .color(Color32::from_rgb(238, 244, 248)),
+                    )
+                    .wrap(false),
+                );
+                ui.add_space(4.0);
+                ui.add(
+                    egui::ProgressBar::new(ratio.clamp(0.0, 1.0))
+                        .fill(accent)
+                        .desired_width((ui.available_width() - 2.0).max(60.0))
+                        .desired_height(5.0),
+                );
+            });
+        });
 }
 
 fn memory_ratio(frame: &TelemetryFrame) -> f32 {
@@ -229,4 +317,33 @@ fn memory_ratio(frame: &TelemetryFrame) -> f32 {
     }
 
     (frame.mem_used_mb as f32 / frame.mem_total_mb as f32).clamp(0.0, 1.0)
+}
+
+fn latest_network_ratio(frame: &TelemetryFrame) -> f32 {
+    frame.net_activity_history[59] / 100.0
+}
+
+fn thermal_color(temperature: f32) -> Color32 {
+    if temperature >= 80.0 {
+        Color32::from_rgb(255, 72, 56)
+    } else if temperature >= 60.0 {
+        Color32::from_rgb(255, 174, 54)
+    } else {
+        Color32::from_rgb(181, 238, 90)
+    }
+}
+
+fn compact_bytes(bytes_per_sec: u64) -> String {
+    if bytes_per_sec >= 1_000_000 {
+        return format!("{:.1} MB/s", bytes_per_sec as f32 / 1_000_000.0);
+    }
+    if bytes_per_sec >= 1_000 {
+        return format!("{:.1} KB/s", bytes_per_sec as f32 / 1_000.0);
+    }
+
+    format!("{bytes_per_sec} B/s")
+}
+
+fn mb_to_gb(mebibytes: u64) -> String {
+    format!("{:.1}", mebibytes as f32 / 1024.0)
 }
