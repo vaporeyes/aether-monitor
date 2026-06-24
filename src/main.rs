@@ -110,6 +110,7 @@ fn main() {
     thread::spawn(move || {
         let mut system = sysinfo::System::new_all();
         let mut networks = sysinfo::Networks::new_with_refreshed_list();
+        let mut components = sysinfo::Components::new_with_refreshed_list();
         let mut cpu_history = [0.0; 60];
         let mut net_activity_history = [0.0; 60];
 
@@ -117,16 +118,12 @@ fn main() {
             thread::sleep(Duration::from_millis(1000));
             system.refresh_all();
             networks.refresh();
+            components.refresh();
             cpu_history.rotate_left(1);
             cpu_history[59] = system.global_cpu_info().cpu_usage();
-            let net_in_bytes_sec: u64 = networks
-                .iter()
-                .map(|(_interface_name, network)| network.received())
-                .sum();
-            let net_out_bytes_sec: u64 = networks
-                .iter()
-                .map(|(_interface_name, network)| network.transmitted())
-                .sum();
+            let net_in_bytes_sec: u64 = networks.values().map(|network| network.received()).sum();
+            let net_out_bytes_sec: u64 =
+                networks.values().map(|network| network.transmitted()).sum();
             net_activity_history.rotate_left(1);
             net_activity_history[59] =
                 network_activity_percent(net_in_bytes_sec.saturating_add(net_out_bytes_sec));
@@ -139,7 +136,7 @@ fn main() {
                 mem_total_mb: system.total_memory() / 1024 / 1024,
                 net_in_bytes_sec,
                 net_out_bytes_sec,
-                ..TelemetryFrame::default()
+                temp_celsius: max_component_temperature(&components),
             });
 
             let menu_view_ptr = MENU_VIEW_PTR.load(Ordering::Acquire);
@@ -188,4 +185,12 @@ fn network_activity_percent(bytes_per_sec: u64) -> f32 {
     }
 
     (((bytes_per_sec as f32 + 1.0).log10() / 7.0) * 100.0).clamp(0.0, 100.0)
+}
+
+fn max_component_temperature(components: &sysinfo::Components) -> f32 {
+    components
+        .iter()
+        .map(|component| component.temperature())
+        .filter(|temperature| temperature.is_finite())
+        .fold(0.0, f32::max)
 }

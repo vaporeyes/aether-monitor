@@ -46,7 +46,14 @@ pub struct GpuEngine<'a> {
 }
 
 impl<'a> GpuEngine<'a> {
-    /// `metal_layer_ptr` must point to a valid Objective-C `CAMetalLayer`.
+    /// Creates a renderer bound to an Objective-C `CAMetalLayer`.
+    ///
+    /// # Safety
+    ///
+    /// `metal_layer_ptr` must point to a valid live `CAMetalLayer`. The layer
+    /// must outlive the returned engine because wgpu keeps using it as the
+    /// surface target. The caller must also ensure this is created from the
+    /// AppKit main thread that owns the view hierarchy.
     pub unsafe fn new_from_metal_layer(
         metal_layer_ptr: *mut c_void,
         width: u32,
